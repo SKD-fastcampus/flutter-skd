@@ -23,6 +23,18 @@ android {
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
         applicationId = "com.seogodong.seogodong"
+        val envFile = rootProject.projectDir.parentFile.resolve(".env.json")
+        val kakaoKey = if (envFile.exists()) {
+            val text = envFile.readText()
+            Regex("\"KAKAO_NATIVE_APP_KEY\"\\s*:\\s*\"([^\"]*)\"")
+                .find(text)
+                ?.groupValues
+                ?.get(1)
+                ?: ""
+        } else {
+            ""
+        }
+        manifestPlaceholders["KAKAO_NATIVE_APP_KEY"] = kakaoKey
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion
