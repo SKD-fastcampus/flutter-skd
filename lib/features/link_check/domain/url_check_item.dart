@@ -1,4 +1,4 @@
-import 'package:seogodong/models/check_status.dart';
+import 'package:seogodong/features/link_check/domain/check_status.dart';
 
 class UrlCheckItem {
   UrlCheckItem({

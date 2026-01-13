@@ -7,18 +7,17 @@ import 'package:flutter_slidable/flutter_slidable.dart';
 import 'package:receive_sharing_intent/receive_sharing_intent.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:firebase_auth/firebase_auth.dart' as firebase_auth;
-import 'package:seogodong/config/constants.dart';
-import 'package:seogodong/models/check_status.dart';
-import 'package:seogodong/models/message_check_item.dart';
-import 'package:seogodong/models/url_check_item.dart';
-import 'package:seogodong/screens/message_detail_page.dart';
-import 'package:seogodong/services/safe_browsing_client.dart';
-import 'package:seogodong/utils/text_utils.dart';
+import 'package:seogodong/core/config/constants.dart';
+import 'package:seogodong/features/link_check/domain/check_status.dart';
+import 'package:seogodong/features/link_check/domain/message_check_item.dart';
+import 'package:seogodong/features/link_check/domain/url_check_item.dart';
+import 'package:seogodong/features/link_check/presentation/message_detail_page.dart';
+import 'package:seogodong/features/link_check/data/safe_browsing_client.dart';
+import 'package:seogodong/core/utils/text_utils.dart';
+import 'package:seogodong/features/link_check/presentation/widgets/message_card.dart';
 
 class ShareCheckPage extends StatefulWidget {
-  const ShareCheckPage({super.key, required this.onLogout});
-
-  final Future<void> Function() onLogout;
+  const ShareCheckPage({super.key});
 
   @override
   State<ShareCheckPage> createState() => _ShareCheckPageState();
@@ -30,9 +29,7 @@ class _ShareCheckPageState extends State<ShareCheckPage> {
   final List<MessageCheckItem> _items = [];
   final Set<String> _selectedIds = {};
   int _activeChecks = 0;
-  int _selectedIndex = 0;
   bool _isLoading = true;
-  bool _showSettings = false;
   bool _selectionMode = false;
 
   @override
@@ -208,33 +205,19 @@ class _ShareCheckPageState extends State<ShareCheckPage> {
   Widget build(BuildContext context) {
     final bool hasItems = _items.isNotEmpty;
     final bool isChecking = _activeChecks > 0;
-    _showSettings = _selectedIndex == 1;
+
     return Scaffold(
       appBar: AppBar(
-        title: Text(_showSettings ? '설정' : '검사 기록'),
+        title: const Text('검사 기록'),
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(1),
           child: Divider(height: 1, thickness: 1, color: Colors.grey.shade300),
         ),
       ),
-      bottomNavigationBar: BottomNavigationBar(
-        currentIndex: _selectedIndex,
-        onTap: (index) {
-          setState(() {
-            _selectedIndex = index;
-          });
-        },
-        items: const [
-          BottomNavigationBarItem(icon: Icon(Icons.list_alt), label: '검사 기록'),
-          BottomNavigationBarItem(icon: Icon(Icons.settings), label: '설정'),
-        ],
-      ),
       body: Padding(
         padding: const EdgeInsets.all(16),
         child: _isLoading
             ? const Center(child: CircularProgressIndicator())
-            : _showSettings
-            ? _buildSettings(context)
             : Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -260,8 +243,8 @@ class _ShareCheckPageState extends State<ShareCheckPage> {
                     child: hasItems
                         ? ListView.separated(
                             itemCount: _items.length,
-                            separatorBuilder: (_, __) =>
-                                const Divider(height: 20),
+                            separatorBuilder: (context, index) =>
+                                const SizedBox(height: 12),
                             itemBuilder: (context, index) =>
                                 _buildSlidableRow(context, _items[index]),
                           )
@@ -273,142 +256,19 @@ class _ShareCheckPageState extends State<ShareCheckPage> {
     );
   }
 
-  Widget _buildSettings(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text('계정', style: Theme.of(context).textTheme.titleMedium),
-        const SizedBox(height: 12),
-        SizedBox(
-          width: double.infinity,
-          child: OutlinedButton(
-            onPressed: _confirmLogout,
-            child: const Text('로그아웃'),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Future<void> _confirmLogout() async {
-    final bool? result = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) {
-        return AlertDialog(
-          title: const Text('앱에서 로그아웃하시겠습니까?', style: TextStyle(fontSize: 18)),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(false),
-              child: const Text('취소'),
-            ),
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(true),
-              child: const Text('확인'),
-            ),
-          ],
-        );
-      },
-    );
-    if (result == true) {
-      await widget.onLogout();
-    }
-  }
-
-  Widget _buildMessageRow(BuildContext context, MessageCheckItem item) {
-    final bool selected = _selectedIds.contains(item.id);
-    return InkWell(
-      borderRadius: BorderRadius.circular(12),
-      onTap: () {
-        if (_selectionMode) {
-          _toggleSelection(item.id);
-          return;
-        }
-        Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (_) => MessageDetailPage(
-              item: item,
-              onSummaryUpdate: (summary) async {
-                _updateItem(item.id, llmSummary: summary);
-                await _saveItems();
-              },
-            ),
-          ),
-        );
-      },
-      onLongPress: () {
-        _toggleSelection(item.id, forceOn: true);
-      },
-      child: Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: item.resultColor.withOpacity(0.08),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: selected ? Colors.black : item.resultColor.withOpacity(0.2),
-            width: selected ? 1.5 : 1,
-          ),
-        ),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (_selectionMode) ...[
-              Icon(
-                selected ? Icons.check_circle : Icons.radio_button_unchecked,
-                color: selected ? Colors.black : Colors.grey.shade500,
-              ),
-              const SizedBox(width: 12),
-            ],
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    item.snippet,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    item.url,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(
-                      context,
-                    ).textTheme.bodySmall?.copyWith(fontSize: 13),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 12),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              decoration: BoxDecoration(
-                color: item.resultColor.withOpacity(0.15),
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: item.resultColor.withOpacity(0.4)),
-              ),
-              child: Text(
-                item.resultLabel,
-                style: TextStyle(
-                  color: item.resultColor,
-                  fontWeight: FontWeight.w800,
-                  fontSize: 16,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
   Widget _buildSlidableRow(BuildContext context, MessageCheckItem item) {
     if (_selectionMode) {
-      return _buildMessageRow(context, item);
+      return MessageCard(
+        item: item,
+        selected: _selectedIds.contains(item.id),
+        selectionMode: _selectionMode,
+        onTap: () {
+          _toggleSelection(item.id);
+        },
+        onLongPress: () {
+          _toggleSelection(item.id, forceOn: true);
+        },
+      );
     }
     return Slidable(
       key: ValueKey(item.id),
@@ -431,7 +291,25 @@ class _ShareCheckPageState extends State<ShareCheckPage> {
           ),
         ],
       ),
-      child: _buildMessageRow(context, item),
+      child: MessageCard(
+        item: item,
+        onTap: () {
+          Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) => MessageDetailPage(
+                item: item,
+                onSummaryUpdate: (summary) async {
+                  _updateItem(item.id, llmSummary: summary);
+                  await _saveItems();
+                },
+              ),
+            ),
+          );
+        },
+        onLongPress: () {
+          _toggleSelection(item.id, forceOn: true);
+        },
+      ),
     );
   }
 

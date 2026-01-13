@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart' as firebase_auth;
 import 'package:kakao_flutter_sdk_user/kakao_flutter_sdk_user.dart';
-import 'package:seogodong/config/constants.dart';
+import 'package:seogodong/core/config/constants.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key, required this.onLoginSuccess});
@@ -31,7 +31,18 @@ class _LoginPageState extends State<LoginPage> {
                 child: Image.asset('kakao_login_large_wide.png', height: 56),
               ),
             ),
-            const SizedBox(height: 56),
+            const SizedBox(height: 16),
+            TextButton(
+              onPressed: widget.onLoginSuccess,
+              child: const Text(
+                '로그인 없이 둘러보기',
+                style: TextStyle(
+                  color: Colors.grey,
+                  decoration: TextDecoration.underline,
+                ),
+              ),
+            ),
+            const SizedBox(height: 40),
             RichText(
               textAlign: TextAlign.left,
               text: TextSpan(
@@ -103,10 +114,11 @@ class _LoginPageState extends State<LoginPage> {
     } catch (error) {
       _showSnack('카카오 로그인 실패: $error');
     } finally {
-      if (!mounted) return;
-      setState(() {
-        _isLoggingIn = false;
-      });
+      if (mounted) {
+        setState(() {
+          _isLoggingIn = false;
+        });
+      }
     }
   }
 

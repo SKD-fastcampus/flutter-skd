@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:seogodong/models/check_status.dart';
+import 'package:seogodong/features/link_check/domain/check_status.dart';
 
 class MessageCheckItem {
   MessageCheckItem({
@@ -76,7 +76,7 @@ class MessageCheckItem {
     if (!isSearchComplete) {
       return '분석 중';
     }
-    return '${riskLabel} ${riskEmoji}';
+    return '$riskLabel $riskEmoji';
   }
 
   String get resultLabelWithScore {
@@ -86,7 +86,7 @@ class MessageCheckItem {
     if (riskScore == null) {
       return riskLabel;
     }
-    return '${riskLabel}(${riskScore})';
+    return '$riskLabel($riskScore)';
   }
 
   Color get resultColor {

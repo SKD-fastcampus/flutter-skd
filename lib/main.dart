@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:kakao_flutter_sdk_user/kakao_flutter_sdk_user.dart';
-import 'package:seogodong/config/constants.dart';
-import 'package:seogodong/screens/root_page.dart';
+import 'package:seogodong/core/config/constants.dart';
+import 'package:seogodong/app/root_page.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -18,9 +18,9 @@ Future<void> main() async {
 Future<void> _printKakaoKeyHash() async {
   try {
     String keyHash = await KakaoSdk.origin;
-    print('현재 앱의 Kakao Key Hash: $keyHash');
+    debugPrint('현재 앱의 Kakao Key Hash: $keyHash');
   } catch (e) {
-    print('Kakao Key Hash를 가져오는 중 오류 발생: $e');
+    debugPrint('Kakao Key Hash를 가져오는 중 오류 발생: $e');
   }
 }
 

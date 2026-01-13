@@ -1,9 +1,9 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
-import 'package:seogodong/config/constants.dart';
-import 'package:seogodong/models/check_status.dart';
-import 'package:seogodong/models/url_check_item.dart';
+import 'package:seogodong/core/config/constants.dart';
+import 'package:seogodong/features/link_check/domain/check_status.dart';
+import 'package:seogodong/features/link_check/domain/url_check_item.dart';
 
 class SafeBrowsingClient {
   SafeBrowsingClient({http.Client? httpClient})
