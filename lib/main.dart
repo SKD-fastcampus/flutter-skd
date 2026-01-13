@@ -15,6 +15,8 @@ const String safeBrowsingApiKey =
     String.fromEnvironment('SAFE_BROWSING_API_KEY');
 const String kakaoNativeAppKey =
     String.fromEnvironment('KAKAO_NATIVE_APP_KEY');
+const String searchServerBaseUrl =
+    String.fromEnvironment('SEARCH_SERVER_BASE_URL');
 const String sseBaseUrl = String.fromEnvironment('SSE_BASE_URL');
 
 Future<void> main() async {
@@ -219,10 +221,12 @@ class _ShareCheckPageState extends State<ShareCheckPage> {
   final SafeBrowsingClient _client = SafeBrowsingClient();
   StreamSubscription<List<SharedMediaFile>>? _mediaStreamSubscription;
   final List<MessageCheckItem> _items = [];
+  final Set<String> _selectedIds = {};
   int _activeChecks = 0;
   int _selectedIndex = 0;
   bool _isLoading = true;
   bool _showSettings = false;
+  bool _selectionMode = false;
 
   @override
   void initState() {
@@ -295,6 +299,8 @@ class _ShareCheckPageState extends State<ShareCheckPage> {
         fullText: '예시 메시지: 배송 조회 링크를 확인하세요',
         url: 'https://example.com/track',
         status: CheckStatus.safe,
+        analysisStatus: 'DONE',
+        riskScore: 5,
       ),
       MessageCheckItem(
         id: '${baseId}_sample_warn',
@@ -302,6 +308,8 @@ class _ShareCheckPageState extends State<ShareCheckPage> {
         fullText: '예시 메시지: 계정 확인이 필요합니다',
         url: 'http://example.com/login',
         status: CheckStatus.pending,
+        analysisStatus: 'DONE',
+        riskScore: 45,
       ),
       MessageCheckItem(
         id: '${baseId}_sample_danger',
@@ -309,6 +317,8 @@ class _ShareCheckPageState extends State<ShareCheckPage> {
         fullText: '예시 메시지: 긴급 보안 업데이트 필요',
         url: 'http://phishing.example.com',
         status: CheckStatus.unsafe,
+        analysisStatus: 'DONE',
+        riskScore: 90,
       ),
     ]);
   }
@@ -367,6 +377,9 @@ class _ShareCheckPageState extends State<ShareCheckPage> {
             details: result.details,
           );
         });
+        if (result.status == CheckStatus.safe) {
+          await _requestSearchServer(item.id, item.url);
+        }
       } catch (error) {
         if (!mounted) return;
         setState(() {
@@ -436,7 +449,13 @@ class _ShareCheckPageState extends State<ShareCheckPage> {
                             style: Theme.of(context).textTheme.titleMedium,
                           ),
                           const Spacer(),
-                          if (isChecking)
+                          if (_selectionMode && _selectedIds.isNotEmpty)
+                            IconButton(
+                              onPressed: _deleteSelected,
+                              icon: const Icon(Icons.delete),
+                              color: Colors.red.shade400,
+                            )
+                          else if (isChecking)
                             const CircularProgressIndicator(),
                         ],
                       ),
@@ -509,25 +528,51 @@ class _ShareCheckPageState extends State<ShareCheckPage> {
   }
 
   Widget _buildMessageRow(BuildContext context, MessageCheckItem item) {
+    final bool selected = _selectedIds.contains(item.id);
     return InkWell(
       borderRadius: BorderRadius.circular(12),
       onTap: () {
+        if (_selectionMode) {
+          _toggleSelection(item.id);
+          return;
+        }
         Navigator.of(context).push(
           MaterialPageRoute(
-            builder: (_) => MessageDetailPage(item: item),
+            builder: (_) => MessageDetailPage(
+              item: item,
+              onSummaryUpdate: (summary) async {
+                _updateItem(item.id, llmSummary: summary);
+                await _saveItems();
+              },
+            ),
           ),
         );
+      },
+      onLongPress: () {
+        _toggleSelection(item.id, forceOn: true);
       },
       child: Container(
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: item.riskColor.withOpacity(0.08),
+          color: item.resultColor.withOpacity(0.08),
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: item.riskColor.withOpacity(0.2)),
+          border: Border.all(
+            color: selected
+                ? Colors.black
+                : item.resultColor.withOpacity(0.2),
+            width: selected ? 1.5 : 1,
+          ),
         ),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            if (_selectionMode) ...[
+              Icon(
+                selected ? Icons.check_circle : Icons.radio_button_unchecked,
+                color: selected ? Colors.black : Colors.grey.shade500,
+              ),
+              const SizedBox(width: 12),
+            ],
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -557,14 +602,15 @@ class _ShareCheckPageState extends State<ShareCheckPage> {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               decoration: BoxDecoration(
-                color: item.riskColor.withOpacity(0.15),
+                color: item.resultColor.withOpacity(0.15),
                 borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: item.riskColor.withOpacity(0.4)),
+                border:
+                    Border.all(color: item.resultColor.withOpacity(0.4)),
               ),
               child: Text(
-                item.riskLabel,
+                item.resultLabel,
                 style: TextStyle(
-                  color: item.riskColor,
+                  color: item.resultColor,
                   fontWeight: FontWeight.w800,
                   fontSize: 16,
                 ),
@@ -577,6 +623,9 @@ class _ShareCheckPageState extends State<ShareCheckPage> {
   }
 
   Widget _buildSlidableRow(BuildContext context, MessageCheckItem item) {
+    if (_selectionMode) {
+      return _buildMessageRow(context, item);
+    }
     return Slidable(
       key: ValueKey(item.id),
       endActionPane: ActionPane(
@@ -616,6 +665,14 @@ class _ShareCheckPageState extends State<ShareCheckPage> {
     CheckStatus? status,
     String? threatType,
     String? details,
+    String? searchId,
+    String? analysisStatus,
+    int? riskScore,
+    String? finalUrl,
+    String? messageText,
+    String? screenshotPath,
+    String? llmSummary,
+    String? detailsJson,
   }) {
     final int index = _items.indexWhere((item) => item.id == id);
     if (index == -1) {
@@ -625,7 +682,84 @@ class _ShareCheckPageState extends State<ShareCheckPage> {
       status: status,
       threatType: threatType,
       details: details,
+      searchId: searchId,
+      analysisStatus: analysisStatus,
+      riskScore: riskScore,
+      finalUrl: finalUrl,
+      messageText: messageText,
+      screenshotPath: screenshotPath,
+      llmSummary: llmSummary,
+      detailsJson: detailsJson,
     );
+  }
+
+  Future<void> _requestSearchServer(String id, String url) async {
+    if (searchServerBaseUrl.isEmpty) {
+      debugPrint('SearchServer: SEARCH_SERVER_BASE_URL is empty');
+      return;
+    }
+    final firebase_auth.User? user =
+        firebase_auth.FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      debugPrint('SearchServer: Firebase user is null');
+      return;
+    }
+    final String? idToken = await user.getIdToken();
+    if (idToken == null || idToken.isEmpty) {
+      debugPrint('SearchServer: Firebase idToken is empty');
+      return;
+    }
+    final Uri endpoint =
+        Uri.parse(searchServerBaseUrl).resolve('api/whitelist/check');
+    final Map<String, dynamic> payload = {
+      'userId': user.uid,
+      'originalUrl': url,
+    };
+    debugPrint('SearchServer: POST $endpoint');
+    debugPrint('SearchServer: headers Authorization: Bearer $idToken');
+    debugPrint('SearchServer: body ${jsonEncode(payload)}');
+    try {
+      http.Response response;
+      while (true) {
+        response = await http.post(
+          endpoint,
+          headers: {
+            'Authorization': 'Bearer $idToken',
+          },
+          body: jsonEncode(payload),
+        );
+        debugPrint(
+          'SearchServer: Response ${response.statusCode}: ${response.body}',
+        );
+        if (response.statusCode != 200) {
+          return;
+        }
+        final Map<String, dynamic> body =
+            jsonDecode(response.body) as Map<String, dynamic>;
+        final String? status = body['status'] as String?;
+        if (!mounted) return;
+        setState(() {
+          _updateItem(
+            id,
+            searchId: body['id']?.toString(),
+            analysisStatus: status,
+            riskScore: body['riskScore'] as int?,
+            finalUrl: body['finalUrl'] as String?,
+            messageText: body['messageText'] as String?,
+            screenshotPath: body['screenshotPath'] as String?,
+            llmSummary: body['llmSummary'] as String?,
+            detailsJson: body['details'] as String?,
+          );
+        });
+        _saveItems();
+        if (status != null && status != 'PENDING') {
+          return;
+        }
+        await Future<void>.delayed(const Duration(seconds: 1));
+      }
+    } catch (error) {
+      debugPrint('SearchServer: error $error');
+    }
   }
 
   Future<bool> _confirmDelete(BuildContext context) async {
@@ -653,6 +787,34 @@ class _ShareCheckPageState extends State<ShareCheckPage> {
   void _removeItem(String id) {
     setState(() {
       _items.removeWhere((item) => item.id == id);
+    });
+    _saveItems();
+  }
+
+  void _toggleSelection(String id, {bool forceOn = false}) {
+    setState(() {
+      if (forceOn) {
+        _selectionMode = true;
+        _selectedIds.add(id);
+        return;
+      }
+      if (_selectedIds.contains(id)) {
+        _selectedIds.remove(id);
+      } else {
+        _selectedIds.add(id);
+      }
+      _selectionMode = _selectedIds.isNotEmpty;
+    });
+  }
+
+  void _deleteSelected() {
+    if (_selectedIds.isEmpty) {
+      return;
+    }
+    setState(() {
+      _items.removeWhere((item) => _selectedIds.contains(item.id));
+      _selectedIds.clear();
+      _selectionMode = false;
     });
     _saveItems();
   }
@@ -704,6 +866,14 @@ class MessageCheckItem {
     required this.status,
     this.threatType,
     this.details,
+    this.searchId,
+    this.analysisStatus,
+    this.riskScore,
+    this.finalUrl,
+    this.messageText,
+    this.screenshotPath,
+    this.llmSummary,
+    this.detailsJson,
   });
 
   final String id;
@@ -713,6 +883,14 @@ class MessageCheckItem {
   final CheckStatus status;
   final String? threatType;
   final String? details;
+  final String? searchId;
+  final String? analysisStatus;
+  final int? riskScore;
+  final String? finalUrl;
+  final String? messageText;
+  final String? screenshotPath;
+  final String? llmSummary;
+  final String? detailsJson;
 
   String get riskLabel {
     switch (status) {
@@ -740,6 +918,53 @@ class MessageCheckItem {
     }
   }
 
+  bool get isSearchComplete {
+    if (status == CheckStatus.unsafe) {
+      return true;
+    }
+    if (analysisStatus == null) {
+      return false;
+    }
+    return analysisStatus != 'PENDING';
+  }
+
+  String get resultLabel {
+    if (!isSearchComplete) {
+      return '분석 중';
+    }
+    return '${riskLabel} ${riskEmoji}';
+  }
+
+  String get resultLabelWithScore {
+    if (!isSearchComplete) {
+      return resultLabel;
+    }
+    if (riskScore == null) {
+      return riskLabel;
+    }
+    return '${riskLabel}(${riskScore})';
+  }
+
+  Color get resultColor {
+    if (!isSearchComplete) {
+      return Colors.black;
+    }
+    return riskColor;
+  }
+
+  String get riskEmoji {
+    switch (status) {
+      case CheckStatus.safe:
+        return '🙂';
+      case CheckStatus.pending:
+      case CheckStatus.error:
+      case CheckStatus.missingKey:
+        return '😐';
+      case CheckStatus.unsafe:
+        return '😠';
+    }
+  }
+
   String get riskDescription {
     switch (status) {
       case CheckStatus.unsafe:
@@ -760,6 +985,14 @@ class MessageCheckItem {
     CheckStatus? status,
     String? threatType,
     String? details,
+    String? searchId,
+    String? analysisStatus,
+    int? riskScore,
+    String? finalUrl,
+    String? messageText,
+    String? screenshotPath,
+    String? llmSummary,
+    String? detailsJson,
   }) {
     return MessageCheckItem(
       id: id,
@@ -769,6 +1002,14 @@ class MessageCheckItem {
       status: status ?? this.status,
       threatType: threatType ?? this.threatType,
       details: details ?? this.details,
+      searchId: searchId ?? this.searchId,
+      analysisStatus: analysisStatus ?? this.analysisStatus,
+      riskScore: riskScore ?? this.riskScore,
+      finalUrl: finalUrl ?? this.finalUrl,
+      messageText: messageText ?? this.messageText,
+      screenshotPath: screenshotPath ?? this.screenshotPath,
+      llmSummary: llmSummary ?? this.llmSummary,
+      detailsJson: detailsJson ?? this.detailsJson,
     );
   }
 
@@ -781,6 +1022,14 @@ class MessageCheckItem {
       'status': status.index,
       'threatType': threatType,
       'details': details,
+      'searchId': searchId,
+      'analysisStatus': analysisStatus,
+      'riskScore': riskScore,
+      'finalUrl': finalUrl,
+      'messageText': messageText,
+      'screenshotPath': screenshotPath,
+      'llmSummary': llmSummary,
+      'detailsJson': detailsJson,
     };
   }
 
@@ -794,6 +1043,14 @@ class MessageCheckItem {
       status: CheckStatus.values[(json['status'] as int?) ?? 0],
       threatType: json['threatType'] as String?,
       details: json['details'] as String?,
+      searchId: json['searchId'] as String?,
+      analysisStatus: json['analysisStatus'] as String?,
+      riskScore: json['riskScore'] as int?,
+      finalUrl: json['finalUrl'] as String?,
+      messageText: json['messageText'] as String?,
+      screenshotPath: json['screenshotPath'] as String?,
+      llmSummary: json['llmSummary'] as String?,
+      detailsJson: json['detailsJson'] as String?,
     );
   }
 }
@@ -950,29 +1207,38 @@ String? _normalizeUrl(String raw) {
 }
 
 class MessageDetailPage extends StatefulWidget {
-  const MessageDetailPage({super.key, required this.item});
+  const MessageDetailPage({
+    super.key,
+    required this.item,
+    required this.onSummaryUpdate,
+  });
 
   final MessageCheckItem item;
+  final Future<void> Function(String summary) onSummaryUpdate;
 
   @override
   State<MessageDetailPage> createState() => _MessageDetailPageState();
 }
 
 class _MessageDetailPageState extends State<MessageDetailPage> {
-  final TextEditingController _controller = TextEditingController();
-  final FocusNode _focusNode = FocusNode();
-  final List<ChatMessage> _messages = [];
-  final ScrollController _scrollController = ScrollController();
   final http.Client _httpClient = http.Client();
+  String _analysisText = '';
+  bool _isStreaming = false;
   bool _messageExpanded = false;
 
   @override
   void dispose() {
-    _controller.dispose();
-    _focusNode.dispose();
-    _scrollController.dispose();
     _httpClient.close();
     super.dispose();
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _analysisText = widget.item.llmSummary ?? '';
+    if (widget.item.isSearchComplete && _analysisText.isEmpty) {
+      _startAnalysisStream();
+    }
   }
 
   @override
@@ -989,24 +1255,9 @@ class _MessageDetailPageState extends State<MessageDetailPage> {
           ),
         ),
       ),
-      body: Column(
-        children: [
-          Expanded(
-            child: ListView.builder(
-              controller: _scrollController,
-              padding: const EdgeInsets.all(16),
-              itemCount: _messages.length + 1,
-              itemBuilder: (context, index) {
-                if (index == 0) {
-                  return _buildHeader(context);
-                }
-                final ChatMessage message = _messages[index - 1];
-                return _buildChatBubble(message);
-              },
-            ),
-          ),
-          _buildInputBar(context),
-        ],
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(16),
+        child: _buildHeader(context),
       ),
     );
   }
@@ -1016,41 +1267,66 @@ class _MessageDetailPageState extends State<MessageDetailPage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        _sectionLabel('분석 결과'),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Text(
+              item.resultLabel,
+              style: TextStyle(
+                fontSize: 24,
+                fontWeight: FontWeight.w800,
+                color: item.resultColor,
+              ),
+            ),
+            const Spacer(),
+            Text(
+              '위험 수준: ${item.isSearchComplete ? (item.riskScore ?? 0) : '?'}'
+              '/100',
+              style: TextStyle(
+                fontSize: 13,
+                color: item.resultColor,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        _buildRiskBar(item),
+        const SizedBox(height: 36),
         _sectionLabel('메시지 내용'),
         const SizedBox(height: 8),
         _buildMessageContent(item.fullText),
-        const SizedBox(height: 20),
+        const SizedBox(height: 36),
         _sectionLabel('메시지에서 분석한 링크'),
         const SizedBox(height: 8),
-        _sectionBody(item.url),
-        const SizedBox(height: 20),
-        _sectionLabel('분석 결과'),
-        const SizedBox(height: 8),
-        Text(
-          item.riskLabel,
-          style: TextStyle(
-            fontSize: 24,
-            fontWeight: FontWeight.w800,
-            color: item.riskColor,
-          ),
-        ),
-        const SizedBox(height: 20),
+        _buildMessageContent(item.url),
+        const SizedBox(height: 36),
         _sectionLabel('분석 설명'),
         const SizedBox(height: 8),
-        _sectionBody(item.riskDescription),
-        const SizedBox(height: 24),
-        _sectionLabel('질문하기'),
-        const SizedBox(height: 12),
+        if (item.isSearchComplete && _analysisText.isNotEmpty)
+          _buildAssistantBubble(_analysisText),
+        const SizedBox(height: 40),
       ],
     );
   }
 
   Widget _sectionLabel(String text) {
-    return Text(
-      text,
-      style: const TextStyle(
-        fontSize: 15,
-        fontWeight: FontWeight.w700,
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+        decoration: BoxDecoration(
+          color: Colors.yellow.shade200,
+          borderRadius: BorderRadius.circular(4),
+        ),
+        child: Text(
+          text,
+          style: const TextStyle(
+            fontSize: 15,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
       ),
     );
   }
@@ -1107,102 +1383,57 @@ class _MessageDetailPageState extends State<MessageDetailPage> {
     );
   }
 
-  Widget _buildChatBubble(ChatMessage message) {
-    final bool isUser = message.isUser;
-    final Alignment alignment =
-        isUser ? Alignment.centerRight : Alignment.centerLeft;
-    final Color bubbleColor =
-        isUser ? Colors.teal.shade100 : Colors.grey.shade200;
-    final BorderRadius borderRadius = BorderRadius.circular(16).copyWith(
-      bottomLeft: isUser ? const Radius.circular(16) : Radius.zero,
-      bottomRight: isUser ? Radius.zero : const Radius.circular(16),
+  Widget _buildRiskBar(MessageCheckItem item) {
+    final int score = item.riskScore ?? 0;
+    final double ratio = (score.clamp(0, 100)) / 100;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return Container(
+          height: 10,
+          decoration: BoxDecoration(
+            color: Colors.grey.shade300,
+            borderRadius: BorderRadius.circular(6),
+          ),
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: Container(
+              width: constraints.maxWidth * ratio,
+              decoration: BoxDecoration(
+                color: item.resultColor,
+                borderRadius: BorderRadius.circular(6),
+              ),
+            ),
+          ),
+        );
+      },
     );
+  }
+
+  Widget _buildAssistantBubble(String text) {
     return Align(
-      alignment: alignment,
+      alignment: Alignment.centerLeft,
       child: Container(
         margin: const EdgeInsets.only(bottom: 12),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         decoration: BoxDecoration(
-          color: bubbleColor,
-          borderRadius: borderRadius,
+          color: Colors.grey.shade200,
+          borderRadius: BorderRadius.circular(16).copyWith(
+            bottomLeft: Radius.zero,
+          ),
         ),
         child: Text(
-          message.text,
+          text,
           style: const TextStyle(fontSize: 15),
         ),
       ),
     );
   }
 
-  Widget _buildInputBar(BuildContext context) {
-    return SafeArea(
-      top: false,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.05),
-              blurRadius: 12,
-              offset: const Offset(0, -2),
-            ),
-          ],
-        ),
-        child: Row(
-          children: [
-            Expanded(
-              child: TextField(
-                controller: _controller,
-                focusNode: _focusNode,
-                textInputAction: TextInputAction.send,
-                onSubmitted: (_) => _handleSend(),
-                decoration: const InputDecoration(
-                  hintText: '질문을 입력하세요',
-                  border: OutlineInputBorder(),
-                  isDense: true,
-                ),
-              ),
-            ),
-            const SizedBox(width: 8),
-            IconButton(
-              onPressed: _handleSend,
-              icon: const Icon(Icons.send),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  void _handleSend() {
-    final String text = _controller.text.trim();
-    if (text.isEmpty) {
+  Future<void> _startAnalysisStream() async {
+    if (_isStreaming) {
       return;
     }
-    setState(() {
-      _messages.add(ChatMessage(text: text, isUser: true));
-      _messages.add(const ChatMessage(text: '', isUser: false));
-    });
-    final int assistantIndex = _messages.length - 1;
-    _controller.clear();
-    _focusNode.requestFocus();
-    _startSseStream(assistantIndex);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!_scrollController.hasClients) {
-        return;
-      }
-      _scrollController.animateTo(
-        _scrollController.position.maxScrollExtent,
-        duration: const Duration(milliseconds: 250),
-        curve: Curves.easeOut,
-      );
-    });
-  }
-
-  Future<void> _startSseStream(int assistantIndex) async {
     if (sseBaseUrl.isEmpty) {
-      _replaceMessage(assistantIndex, 'Server not connected');
       return;
     }
     final Uri endpoint = Uri.parse(sseBaseUrl)
@@ -1212,17 +1443,18 @@ class _MessageDetailPageState extends State<MessageDetailPage> {
           firebase_auth.FirebaseAuth.instance.currentUser;
       final String? idToken = await user?.getIdToken();
       if (idToken == null || idToken.isEmpty) {
-        _replaceMessage(assistantIndex, '로그인이 필요합니다.');
         return;
       }
+      setState(() {
+        _isStreaming = true;
+      });
       final http.Request request = http.Request('GET', endpoint);
       request.headers['Authorization'] = 'Bearer $idToken';
       final http.StreamedResponse response = await _httpClient.send(request);
       if (response.statusCode != 200) {
-        _replaceMessage(
-          assistantIndex,
-          'Server not connected (${response.statusCode})',
-        );
+        setState(() {
+          _isStreaming = false;
+        });
         return;
       }
       String currentEvent = '';
@@ -1243,52 +1475,26 @@ class _MessageDetailPageState extends State<MessageDetailPage> {
           final Map<String, dynamic> payload =
               jsonDecode(data) as Map<String, dynamic>;
           final String text = payload['text'] as String? ?? '';
-          _appendToMessage(assistantIndex, text);
+          if (text.isNotEmpty) {
+            setState(() {
+              _analysisText = '$_analysisText$text';
+            });
+          }
         } else if (currentEvent == 'done') {
-          return;
+          break;
         }
       }
-    } catch (error) {
-      _replaceMessage(assistantIndex, 'Server not connected');
-    }
-  }
-
-  void _appendToMessage(int index, String text) {
-    if (text.isEmpty || index >= _messages.length) {
-      return;
-    }
-    setState(() {
-      final ChatMessage current = _messages[index];
-      _messages[index] = ChatMessage(
-        text: '${current.text}$text',
-        isUser: current.isUser,
-      );
-    });
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!_scrollController.hasClients) {
-        return;
+      if (_analysisText.isNotEmpty) {
+        await widget.onSummaryUpdate(_analysisText);
       }
-      _scrollController.animateTo(
-        _scrollController.position.maxScrollExtent,
-        duration: const Duration(milliseconds: 200),
-        curve: Curves.easeOut,
-      );
-    });
-  }
-
-  void _replaceMessage(int index, String text) {
-    if (index >= _messages.length) {
-      return;
+    } catch (error) {
+      debugPrint('SSE stream error: $error');
+    } finally {
+      if (!mounted) return;
+      setState(() {
+        _isStreaming = false;
+      });
     }
-    setState(() {
-      _messages[index] = ChatMessage(text: text, isUser: false);
-    });
+    return;
   }
-}
-
-class ChatMessage {
-  const ChatMessage({required this.text, required this.isUser});
-
-  final String text;
-  final bool isUser;
 }
