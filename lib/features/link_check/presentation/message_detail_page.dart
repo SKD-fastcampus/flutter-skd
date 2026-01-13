@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:firebase_auth/firebase_auth.dart' as firebase_auth;
 import 'package:seogodong/core/config/constants.dart';
+import 'package:seogodong/core/presentation/widgets/skeleton_box.dart';
 import 'package:seogodong/features/link_check/domain/message_check_item.dart';
 
 class MessageDetailPage extends StatefulWidget {
@@ -36,8 +37,15 @@ class _MessageDetailPageState extends State<MessageDetailPage> {
   void initState() {
     super.initState();
     _analysisText = widget.item.llmSummary ?? '';
-    if (widget.item.isSearchComplete && _analysisText.isEmpty) {
-      _startAnalysisStream();
+    // If pending or empty, try to start stream (real or mock)
+    if (_analysisText.isEmpty) {
+      if (widget.item.isSearchComplete) {
+        // Real stream if backend data exists
+        _startAnalysisStream();
+      } else if (widget.item.analysisStatus == 'PENDING') {
+        // Simulate stream for demo/pending items
+        _simulateMockStream();
+      }
     }
   }
 
@@ -144,8 +152,8 @@ class _MessageDetailPageState extends State<MessageDetailPage> {
                         begin: Alignment.topCenter,
                         end: Alignment.bottomCenter,
                         colors: [
-                          Colors.white.withOpacity(0),
-                          Colors.white.withOpacity(0.9),
+                          Colors.white.withValues(alpha: 0),
+                          Colors.white.withValues(alpha: 0.9),
                           Colors.white,
                         ],
                       ),
@@ -217,9 +225,9 @@ class _MessageDetailPageState extends State<MessageDetailPage> {
       padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 20),
       margin: const EdgeInsets.symmetric(horizontal: 16),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.08),
+        color: color.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: color.withOpacity(0.2), width: 2),
+        border: Border.all(color: color.withValues(alpha: 0.2), width: 2),
       ),
       child: Column(
         children: [
@@ -283,14 +291,26 @@ class _MessageDetailPageState extends State<MessageDetailPage> {
               borderRadius: BorderRadius.circular(20),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.03),
+                  color: Colors.black.withValues(alpha: 0.03),
                   blurRadius: 10,
                   offset: const Offset(0, 4),
                 ),
               ],
             ),
-            child: _analysisText.isEmpty && _isStreaming
-                ? const Center(child: CircularProgressIndicator())
+            child:
+                (_analysisText.isEmpty && _isStreaming) ||
+                    (widget.item.analysisStatus == 'PENDING' &&
+                        _analysisText.isEmpty)
+                ? Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      SkeletonBox(width: double.infinity, height: 16),
+                      SizedBox(height: 8),
+                      SkeletonBox(width: double.infinity, height: 16),
+                      SizedBox(height: 8),
+                      SkeletonBox(width: 200, height: 16),
+                    ],
+                  )
                 : Text(
                     _analysisText.isEmpty ? '분석 내용이 아직 없습니다.' : _analysisText,
                     style: const TextStyle(
@@ -367,7 +387,7 @@ class _MessageDetailPageState extends State<MessageDetailPage> {
           Container(
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
-              color: (color ?? Colors.blue).withOpacity(0.1),
+              color: (color ?? Colors.blue).withValues(alpha: 0.1),
               shape: BoxShape.circle,
             ),
             child: Icon(icon, size: 20, color: color ?? Colors.blue),
@@ -573,5 +593,36 @@ class _MessageDetailPageState extends State<MessageDetailPage> {
       }
     }
     return;
+  }
+
+  Future<void> _simulateMockStream() async {
+    setState(() {
+      _isStreaming = true;
+    });
+
+    // Initial delay to show skeleton
+    await Future.delayed(const Duration(seconds: 2));
+
+    const String fullText =
+        'AI 분석 결과: 이 링크는 딥페이크 및 피싱 사이트로 의심되는 패턴을 포함하고 있습니다. '
+        '사용자들의 신고 내역과 도메인 수명(생성된지 2일됨)을 고려할 때 매우 위험합니다. '
+        '절대 개인정보를 입력하지 마세요.';
+
+    final List<String> chunks = fullText.split(' ');
+    for (final chunk in chunks) {
+      if (!mounted) return;
+      await Future.delayed(const Duration(milliseconds: 100));
+      setState(() {
+        _analysisText = '$_analysisText $chunk';
+      });
+    }
+
+    if (mounted) {
+      setState(() {
+        _isStreaming = false;
+      });
+      // Optionally update the item summary via callback so it persists
+      widget.onSummaryUpdate(_analysisText);
+    }
   }
 }

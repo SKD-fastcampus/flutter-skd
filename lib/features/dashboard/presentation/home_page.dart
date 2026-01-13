@@ -9,7 +9,10 @@ import 'package:seogodong/features/link_check/presentation/message_detail_page.d
 import 'package:seogodong/features/link_check/presentation/history_page.dart';
 import 'package:seogodong/features/settings/presentation/settings_page.dart';
 import 'package:seogodong/features/link_check/presentation/widgets/message_card.dart';
+import 'package:seogodong/features/link_check/presentation/scanning_page.dart';
 import 'package:firebase_auth/firebase_auth.dart' as firebase_auth;
+import 'package:receive_sharing_intent/receive_sharing_intent.dart';
+import 'dart:async';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -21,6 +24,7 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> {
   int _selectedIndex = 0;
   final List<MessageCheckItem> _recentItems = [];
+  StreamSubscription<List<SharedMediaFile>>? _mediaStreamSubscription;
 
   // We reuse logic from ShareCheckPage, but ideally this should be in a Provider
   // For now, we will duplicate/manage state here for the Dashboard view
@@ -30,6 +34,58 @@ class _HomePageState extends State<HomePage> {
   void initState() {
     super.initState();
     _loadRecentItems();
+    _setupSharing();
+  }
+
+  @override
+  void dispose() {
+    _mediaStreamSubscription?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _setupSharing() async {
+    // 1. Initial share (app closed)
+    final List<SharedMediaFile> initialMedia = await ReceiveSharingIntent
+        .instance
+        .getInitialMedia();
+    final String? initialText = _extractText(initialMedia);
+    if (initialText != null && initialText.isNotEmpty) {
+      _handleSharedText(initialText);
+    }
+
+    // 2. Stream share (app open)
+    _mediaStreamSubscription = ReceiveSharingIntent.instance
+        .getMediaStream()
+        .listen((media) {
+          final String? sharedText = _extractText(media);
+          if (sharedText != null && sharedText.isNotEmpty) {
+            _handleSharedText(sharedText);
+          }
+        });
+  }
+
+  String? _extractText(List<SharedMediaFile> media) {
+    if (media.isEmpty) return null;
+    final List<String> parts = [];
+    for (final item in media) {
+      if (item.type == SharedMediaType.text ||
+          item.type == SharedMediaType.url) {
+        parts.add(item.path);
+      } else if (item.message != null && item.message!.isNotEmpty) {
+        parts.add(item.message!);
+      }
+    }
+    if (parts.isEmpty) return null;
+    return parts.join('\n');
+  }
+
+  void _handleSharedText(String text) {
+    // Navigate to scanning page immediately
+    if (!mounted) return;
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => ScanningPage(textToCheck: text)),
+    );
   }
 
   Future<void> _loadRecentItems() async {
@@ -298,11 +354,10 @@ class _HomePageState extends State<HomePage> {
       ).showSnackBar(const SnackBar(content: Text('클립보드에 복사된 텍스트가 없습니다.')));
       return;
     }
-    // TODO: Pass this text to the checker logic
-    // For now, let's switch to the history tab and simulate logic
-    // OR we should lift the checking logic up to HomePage or a Provider
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('클립보드 내용 확인: ${text.substring(0, 10)}...')),
+    // Navigate to ScanningPage
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => ScanningPage(textToCheck: text)),
     );
   }
 
