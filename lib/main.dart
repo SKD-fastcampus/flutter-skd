@@ -141,10 +141,10 @@ class _LoginPageState extends State<LoginPage> {
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(
-              'SKD',
+              '게섯거라',
               style: Theme.of(context).textTheme.headlineMedium,
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 84),
             InkWell(
               onTap: _isLoggingIn ? null : _handleKakaoLogin,
               child: Opacity(
@@ -153,6 +153,40 @@ class _LoginPageState extends State<LoginPage> {
                   'kakao_login_large_wide.png',
                   height: 56,
                 ),
+              ),
+            ),
+            const SizedBox(height: 56),
+            RichText(
+              textAlign: TextAlign.left,
+              text: TextSpan(
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      fontSize: 16,
+                      height: 3.6,
+                    ),
+                children: [
+                  const TextSpan(text: '😈 메시지에 있는 수상한 링크, '),
+                  const TextSpan(
+                    text: '게섯거라',
+                    style: TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  const TextSpan(text: '로 '),
+                  const TextSpan(
+                    text: '공유',
+                    style: TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  const TextSpan(text: '하세요\n'),
+                  const TextSpan(text: '🔍 '),
+                  const TextSpan(
+                    text: '게섯거라',
+                    style: TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  const TextSpan(text: '가 위험한 링크인지 '),
+                  const TextSpan(
+                    text: '검사',
+                    style: TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  const TextSpan(text: '해 드려요'),
+                ],
               ),
             ),
           ],
@@ -189,7 +223,7 @@ class _LoginPageState extends State<LoginPage> {
       );
       await widget.onLoginSuccess();
       if (!mounted) return;
-      _showSnack('카카오 로그인 성공');
+      _showSnack('카카오 로그인 성공!');
     } catch (error) {
       _showSnack('카카오 로그인 실패: $error');
     } finally {
