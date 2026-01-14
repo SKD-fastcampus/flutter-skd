@@ -91,7 +91,8 @@ class HistoryRepository {
         status: CheckStatus.safe,
         analysisStatus: 'DONE',
         riskScore: 5,
-        llmSummary: '공식 택배사 도메인으로 확인되었습니다. 안전한 링크입니다.',
+        searchId: 'uuid',
+        llmSummary: null,
       ),
       MessageCheckItem(
         id: '${baseId}_danger_1',
@@ -101,7 +102,8 @@ class HistoryRepository {
         status: CheckStatus.unsafe,
         analysisStatus: 'DONE',
         riskScore: 92,
-        llmSummary: '피싱 사이트로 의심되는 패턴이 발견되었습니다. 절대 접속하지 마세요.',
+        searchId: 'uuid',
+        llmSummary: null,
       ),
       MessageCheckItem(
         id: '${baseId}_warning_1',

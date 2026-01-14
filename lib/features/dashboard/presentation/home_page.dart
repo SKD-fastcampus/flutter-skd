@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -25,6 +26,7 @@ class _HomePageState extends State<HomePage> {
   int _selectedIndex = 0;
   final List<MessageCheckItem> _recentItems = [];
   StreamSubscription<List<SharedMediaFile>>? _mediaStreamSubscription;
+  final TextEditingController _webInputController = TextEditingController();
 
   // We reuse logic from ShareCheckPage, but ideally this should be in a Provider
   // For now, we will duplicate/manage state here for the Dashboard view
@@ -40,10 +42,14 @@ class _HomePageState extends State<HomePage> {
   @override
   void dispose() {
     _mediaStreamSubscription?.cancel();
+    _webInputController.dispose();
     super.dispose();
   }
 
   Future<void> _setupSharing() async {
+    if (kIsWeb) {
+      return;
+    }
     // 1. Initial share (app closed)
     final List<SharedMediaFile> initialMedia = await ReceiveSharingIntent
         .instance
@@ -210,6 +216,50 @@ class _HomePageState extends State<HomePage> {
                 ],
               ),
             ),
+            if (kIsWeb) ...[
+              const SizedBox(height: 20),
+              Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade100,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
+                      '웹에서는 공유 기능이 지원되지 않습니다.',
+                      style: TextStyle(
+                        color: Colors.grey.shade700,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: _webInputController,
+                      minLines: 3,
+                      maxLines: 6,
+                      decoration: const InputDecoration(
+                        labelText: '검사할 메시지를 붙여넣기',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    ElevatedButton(
+                      onPressed: () {
+                        final String text = _webInputController.text.trim();
+                        if (text.isEmpty) {
+                          return;
+                        }
+                        _webInputController.clear();
+                        _handleSharedText(text);
+                      },
+                      child: const Text('메시지 검사'),
+                    ),
+                  ],
+                ),
+              ),
+            ],
 
             const SizedBox(height: 32),
 

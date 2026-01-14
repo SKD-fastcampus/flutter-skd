@@ -1,18 +1,31 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:kakao_flutter_sdk_user/kakao_flutter_sdk_user.dart';
 import 'package:seogodong/core/config/constants.dart';
 import 'package:seogodong/app/root_page.dart';
+import 'package:seogodong/firebase_options.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp();
-  if (kakaoNativeAppKey.isNotEmpty) {
+  if (kIsWeb) {
+    await Firebase.initializeApp(options: DefaultFirebaseOptions.web);
+  } else {
+    await Firebase.initializeApp();
+  }
+
+  if (kIsWeb) {
+    if (kakaoJavaScriptAppKey.isNotEmpty) {
+      KakaoSdk.init(javaScriptAppKey: kakaoJavaScriptAppKey);
+    }
+  } else if (kakaoNativeAppKey.isNotEmpty) {
     KakaoSdk.init(nativeAppKey: kakaoNativeAppKey);
   }
 
   runApp(const SeogodongApp());
-  _printKakaoKeyHash();
+  if (!kIsWeb) {
+    _printKakaoKeyHash();
+  }
 }
 
 Future<void> _printKakaoKeyHash() async {

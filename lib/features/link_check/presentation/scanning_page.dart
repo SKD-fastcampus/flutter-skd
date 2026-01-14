@@ -1,8 +1,14 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+import 'package:firebase_auth/firebase_auth.dart' as firebase_auth;
+import 'package:seogodong/core/config/constants.dart';
 import 'package:seogodong/core/utils/text_utils.dart';
 import 'package:seogodong/features/link_check/data/history_repository.dart';
+import 'package:seogodong/features/link_check/data/safe_browsing_client.dart';
 import 'package:seogodong/features/link_check/domain/check_status.dart';
 import 'package:seogodong/features/link_check/domain/message_check_item.dart';
+import 'package:seogodong/features/link_check/domain/url_check_item.dart';
 import 'package:seogodong/features/link_check/presentation/message_detail_page.dart';
 
 class ScanningPage extends StatefulWidget {
@@ -19,6 +25,7 @@ class _ScanningPageState extends State<ScanningPage>
   late AnimationController _controller;
   String _statusText = '분석 준비 중...';
   double _progress = 0.0;
+  final SafeBrowsingClient _safeBrowsingClient = SafeBrowsingClient();
 
   @override
   void initState() {
@@ -28,7 +35,7 @@ class _ScanningPageState extends State<ScanningPage>
       duration: const Duration(seconds: 2),
     )..repeat();
 
-    _startMockAnalysis();
+    _startAnalysis();
   }
 
   @override
@@ -37,7 +44,7 @@ class _ScanningPageState extends State<ScanningPage>
     super.dispose();
   }
 
-  Future<void> _startMockAnalysis() async {
+  Future<void> _startAnalysis() async {
     // 1. Checking link format
     await Future.delayed(const Duration(milliseconds: 800));
     if (mounted) {
@@ -56,57 +63,165 @@ class _ScanningPageState extends State<ScanningPage>
       });
     }
 
-    // 3. AI Analysis
+    // 3. Safe Browsing
     await Future.delayed(const Duration(milliseconds: 1500));
     if (mounted) {
       setState(() {
-        _statusText = 'AI 정밀 분석 중...';
+        _statusText = '구글 Safe Browsing 검사 중...';
         _progress = 0.9;
       });
     }
 
-    // 4. Finish
+    // 4. Finish + real analysis
     await Future.delayed(const Duration(milliseconds: 1000));
-    if (mounted) {
-      setState(() {
-        _statusText = '분석 완료!';
-        _progress = 1.0;
-      });
-      _navigateToResult();
-    }
+    await _navigateToResult();
   }
 
   Future<void> _navigateToResult() async {
     // Extract URL
     final List<String> urls = extractUrls(widget.textToCheck);
-    final String urlToUse = urls.isNotEmpty
-        ? urls.first
-        : 'https://example.com'; // Fallback if no URL
+    if (urls.isEmpty) {
+      final MessageCheckItem fallback = MessageCheckItem(
+        id: DateTime.now().millisecondsSinceEpoch.toString(),
+        fullText: widget.textToCheck,
+        snippet: buildSnippet(widget.textToCheck),
+        url: '',
+        status: CheckStatus.error,
+        details: '링크를 찾을 수 없습니다.',
+      );
+      await HistoryRepository().addItem(fallback);
+      if (!mounted) return;
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (_) => MessageDetailPage(
+            item: fallback,
+            onSummaryUpdate: (s) async {},
+          ),
+        ),
+      );
+      return;
+    }
 
-    // Determine a mock result
-    final bool isSuspicious = widget.textToCheck.contains('http');
-    final resultItem = MessageCheckItem(
-      id: DateTime.now().millisecondsSinceEpoch.toString(),
-      fullText: widget.textToCheck,
-      snippet: buildSnippet(widget.textToCheck),
-      url: urlToUse,
-      status: isSuspicious ? CheckStatus.unsafe : CheckStatus.safe,
-      llmSummary: isSuspicious
-          ? '의심스러운 링크가 포함되어 있습니다. 주의가 필요합니다.'
-          : '특별한 위협이 감지되지 않았습니다.',
-    );
+    final List<MessageCheckItem> created = [];
+    final int baseId = DateTime.now().microsecondsSinceEpoch;
+    for (int i = 0; i < urls.length; i++) {
+      final urlToUse = urls[i];
+      MessageCheckItem item = MessageCheckItem(
+        id: '${baseId}_$i',
+        fullText: widget.textToCheck,
+        snippet: buildSnippet(widget.textToCheck),
+        url: urlToUse,
+        status: CheckStatus.pending,
+        analysisStatus: 'PENDING',
+      );
+      await HistoryRepository().addItem(item);
+      created.add(item);
 
-    // Save to History via Repository
-    await HistoryRepository().addItem(resultItem);
+      final UrlCheckItem safeBrowsingResult = await _safeBrowsingClient.checkUrl(
+        urlToUse,
+      );
+      item = item.copyWith(
+        status: safeBrowsingResult.status,
+        threatType: safeBrowsingResult.threatType,
+        details: safeBrowsingResult.details,
+      );
+      if (safeBrowsingResult.status == CheckStatus.unsafe) {
+        item = item.copyWith(analysisStatus: 'DONE');
+        await HistoryRepository().updateItem(item);
+        continue;
+      }
+      if (safeBrowsingResult.status == CheckStatus.safe) {
+        item = await _requestSearchServer(item);
+      } else {
+        await HistoryRepository().updateItem(item);
+      }
+      created[created.indexWhere((e) => e.id == item.id)] = item;
+    }
 
     if (!mounted) return;
     Navigator.pushReplacement(
       context,
       MaterialPageRoute(
-        builder: (_) =>
-            MessageDetailPage(item: resultItem, onSummaryUpdate: (s) async {}),
+        builder: (_) => MessageDetailPage(
+          item: created.first,
+          onSummaryUpdate: (s) async {
+            await HistoryRepository().updateItem(
+              created.first.copyWith(llmSummary: s),
+            );
+          },
+        ),
       ),
     );
+  }
+
+  Future<MessageCheckItem> _requestSearchServer(MessageCheckItem item) async {
+    if (searchServerBaseUrl.isEmpty) {
+      return item;
+    }
+    final firebase_auth.User? user =
+        firebase_auth.FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      return item;
+    }
+    final String? idToken = await user.getIdToken();
+    if (idToken == null || idToken.isEmpty) {
+      return item;
+    }
+    final String tokenTail =
+        idToken.length >= 4 ? idToken.substring(idToken.length - 4) : idToken;
+    debugPrint('SearchServer: Firebase ID token(last4)=$tokenTail');
+    final Uri endpoint = Uri.parse(
+      searchServerBaseUrl,
+    ).resolve('api/whitelist/check');
+    final Map<String, dynamic> payload = {
+      'userId': user.uid,
+      'originalUrl': item.url,
+    };
+    debugPrint(
+      'SearchServer: Request GET $endpoint headers={Authorization: Bearer ****$tokenTail, Content-Type: application/json} body=${jsonEncode(payload)}',
+    );
+    MessageCheckItem current = item;
+    final http.Client client = http.Client();
+    try {
+      while (true) {
+        final http.Request request = http.Request('GET', endpoint);
+        request.headers['Authorization'] = 'Bearer $idToken';
+        request.headers['Content-Type'] = 'application/json';
+        request.body = jsonEncode(payload);
+        final http.StreamedResponse streamedResponse = await client.send(
+          request,
+        );
+        final http.Response response =
+            await http.Response.fromStream(streamedResponse);
+      debugPrint(
+        'SearchServer: Response ${response.statusCode} ${response.body}',
+      );
+      if (response.statusCode != 200) {
+        return current;
+      }
+      final Map<String, dynamic> body =
+          jsonDecode(response.body) as Map<String, dynamic>;
+      final String? status = body['status'] as String?;
+      current = current.copyWith(
+        searchId: (body['result_id'] ?? body['id'])?.toString(),
+        analysisStatus: status,
+        riskScore: body['riskScore'] as int?,
+        finalUrl: body['finalUrl'] as String?,
+        messageText: body['messageText'] as String?,
+        screenshotPath: body['screenshotPath'] as String?,
+        llmSummary: body['llmSummary'] as String?,
+        detailsJson: body['details'] as String?,
+      );
+      await HistoryRepository().updateItem(current);
+      if (status != null && status != 'PENDING') {
+        return current;
+      }
+      await Future<void>.delayed(const Duration(seconds: 1));
+    }
+    } finally {
+      client.close();
+    }
   }
 
   @override

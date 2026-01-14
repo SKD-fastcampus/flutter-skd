@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 import 'package:firebase_auth/firebase_auth.dart' as firebase_auth;
 import 'package:seogodong/core/config/constants.dart';
 import 'package:seogodong/core/presentation/widgets/skeleton_box.dart';
+import 'package:seogodong/features/link_check/domain/check_status.dart';
 import 'package:seogodong/features/link_check/domain/message_check_item.dart';
 
 class MessageDetailPage extends StatefulWidget {
@@ -37,14 +38,9 @@ class _MessageDetailPageState extends State<MessageDetailPage> {
   void initState() {
     super.initState();
     _analysisText = widget.item.llmSummary ?? '';
-    // If pending or empty, try to start stream (real or mock)
     if (_analysisText.isEmpty) {
       if (widget.item.isSearchComplete) {
-        // Real stream if backend data exists
         _startAnalysisStream();
-      } else if (widget.item.analysisStatus == 'PENDING') {
-        // Simulate stream for demo/pending items
-        _simulateMockStream();
       }
     }
   }
@@ -529,24 +525,48 @@ class _MessageDetailPageState extends State<MessageDetailPage> {
       return;
     }
     if (sseBaseUrl.isEmpty) {
+      debugPrint('SSE: SSE_BASE_URL is empty');
       return;
     }
-    final Uri endpoint = Uri.parse(
-      sseBaseUrl,
-    ).resolve('v1/explain/uuid/stream');
+    final MessageCheckItem item = widget.item;
+    final bool forceUuid = item.searchId == 'uuid';
+    final bool isDetected =
+        item.status == CheckStatus.unsafe && !forceUuid;
+    final String? resultId = forceUuid ? 'uuid' : item.searchId;
+    final Uri endpoint = isDetected
+        ? Uri.parse(sseBaseUrl).resolve('v1/message/explain/stream')
+        : Uri.parse(sseBaseUrl).resolve(
+            'v1/explain/${resultId ?? "uuid"}/stream',
+          );
     try {
       final firebase_auth.User? user =
           firebase_auth.FirebaseAuth.instance.currentUser;
       final String? idToken = await user?.getIdToken();
       if (idToken == null || idToken.isEmpty) {
+        debugPrint('SSE: Firebase ID token is missing');
         return;
       }
+      final String tokenTail =
+          idToken.length >= 4 ? idToken.substring(idToken.length - 4) : idToken;
+      debugPrint('SSE: Firebase ID token(last4)=$idToken');
       setState(() {
         _isStreaming = true;
       });
-      final http.Request request = http.Request('GET', endpoint);
+      debugPrint('SSE: POST $endpoint');
+      final Map<String, dynamic> payload = isDetected
+          ? {
+              'message': item.fullText,
+              'safe_browsing_result': item.threatType ?? '',
+            }
+          : {
+              'message': item.fullText,
+            };
+      final http.Request request = http.Request('POST', endpoint);
       request.headers['Authorization'] = 'Bearer $idToken';
+      request.headers['Content-Type'] = 'application/json';
+      request.body = jsonEncode(payload);
       final http.StreamedResponse response = await _httpClient.send(request);
+      debugPrint('SSE: Response ${response.statusCode}');
       if (response.statusCode != 200) {
         setState(() {
           _isStreaming = false;
@@ -595,34 +615,4 @@ class _MessageDetailPageState extends State<MessageDetailPage> {
     return;
   }
 
-  Future<void> _simulateMockStream() async {
-    setState(() {
-      _isStreaming = true;
-    });
-
-    // Initial delay to show skeleton
-    await Future.delayed(const Duration(seconds: 2));
-
-    const String fullText =
-        'AI 분석 결과: 이 링크는 딥페이크 및 피싱 사이트로 의심되는 패턴을 포함하고 있습니다. '
-        '사용자들의 신고 내역과 도메인 수명(생성된지 2일됨)을 고려할 때 매우 위험합니다. '
-        '절대 개인정보를 입력하지 마세요.';
-
-    final List<String> chunks = fullText.split(' ');
-    for (final chunk in chunks) {
-      if (!mounted) return;
-      await Future.delayed(const Duration(milliseconds: 100));
-      setState(() {
-        _analysisText = '$_analysisText $chunk';
-      });
-    }
-
-    if (mounted) {
-      setState(() {
-        _isStreaming = false;
-      });
-      // Optionally update the item summary via callback so it persists
-      widget.onSummaryUpdate(_analysisText);
-    }
-  }
 }
