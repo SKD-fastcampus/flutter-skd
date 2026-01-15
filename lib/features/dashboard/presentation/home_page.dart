@@ -252,7 +252,7 @@ class _HomePageState extends State<HomePage>
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     Text(
-                      '웹에서는 공유 기능이 지원되지 않습니다.',
+                      '검사하고 싶은 링크가 포함된 메시지를 붙여넣고, \'메시지 검사\' 버튼을 눌러주세요.',
                       style: TextStyle(
                         color: Colors.grey.shade700,
                         fontWeight: FontWeight.w600,
@@ -264,7 +264,7 @@ class _HomePageState extends State<HomePage>
                       minLines: 3,
                       maxLines: 6,
                       decoration: const InputDecoration(
-                        labelText: '검사할 메시지를 붙여넣기',
+                        labelText: '검사할 메시지를 입력해 주세요',
                         border: OutlineInputBorder(),
                       ),
                     ),
