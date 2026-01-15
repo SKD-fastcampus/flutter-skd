@@ -124,6 +124,7 @@ class _ShareCheckPageState extends State<ShareCheckPage> {
       child: MessageCard(
         item: item,
         onTap: () {
+          _markItemRead(item);
           Navigator.of(context).push(
             MaterialPageRoute(
               builder: (_) => MessageDetailPage(
@@ -154,6 +155,7 @@ class _ShareCheckPageState extends State<ShareCheckPage> {
   void _updateItem(
     String id, {
     CheckStatus? status,
+    bool? isRead,
     String? threatType,
     String? details,
     String? searchId,
@@ -171,6 +173,7 @@ class _ShareCheckPageState extends State<ShareCheckPage> {
     }
     _items[index] = _items[index].copyWith(
       status: status,
+      isRead: isRead,
       threatType: threatType,
       details: details,
       searchId: searchId,
@@ -182,7 +185,17 @@ class _ShareCheckPageState extends State<ShareCheckPage> {
       llmSummary: llmSummary,
       detailsJson: detailsJson,
     );
+    setState(() {
+      _items[index] = _items[index];
+    });
     HistoryRepository().updateItem(_items[index]);
+  }
+
+  Future<void> _markItemRead(MessageCheckItem item) async {
+    if (!item.isSearchComplete || item.isRead) {
+      return;
+    }
+    _updateItem(item.id, isRead: true);
   }
 
   Future<bool> _confirmDelete(BuildContext context) async {

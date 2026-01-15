@@ -38,6 +38,11 @@ class MessageCard extends StatelessWidget {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            if (!selectionMode)
+              Padding(
+                padding: const EdgeInsets.only(right: 8, top: 4),
+                child: _UnreadDot(isVisible: item.isSearchComplete && !item.isRead),
+              ),
             if (selectionMode) ...[
               Icon(
                 selected ? Icons.check_circle : Icons.radio_button_unchecked,
@@ -89,6 +94,28 @@ class MessageCard extends StatelessWidget {
             ),
             const Icon(Icons.chevron_right, color: Colors.grey),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _UnreadDot extends StatelessWidget {
+  const _UnreadDot({required this.isVisible});
+
+  final bool isVisible;
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedOpacity(
+      opacity: isVisible ? 1 : 0,
+      duration: const Duration(milliseconds: 200),
+      child: Container(
+        width: 8,
+        height: 8,
+        decoration: const BoxDecoration(
+          color: Colors.red,
+          shape: BoxShape.circle,
         ),
       ),
     );

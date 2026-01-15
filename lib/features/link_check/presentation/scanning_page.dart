@@ -45,34 +45,25 @@ class _ScanningPageState extends State<ScanningPage>
   }
 
   Future<void> _startAnalysis() async {
-    // 1. Checking link format
+    // 1. Extract link
     await Future.delayed(const Duration(milliseconds: 800));
     if (mounted) {
       setState(() {
-        _statusText = '링크 형식을 확인하는 중...';
-        _progress = 0.3;
+        _statusText = '링크를 추출하는 중...';
+        _progress = 0.5;
       });
     }
 
-    // 2. Checking blacklist
-    await Future.delayed(const Duration(milliseconds: 1200));
-    if (mounted) {
-      setState(() {
-        _statusText = '악성 데이터베이스 대조 중...';
-        _progress = 0.6;
-      });
-    }
-
-    // 3. Safe Browsing
+    // 2. Safe Browsing
     await Future.delayed(const Duration(milliseconds: 1500));
     if (mounted) {
       setState(() {
         _statusText = '구글 Safe Browsing 검사 중...';
-        _progress = 0.9;
+        _progress = 0.85;
       });
     }
 
-    // 4. Finish + real analysis
+    // 3. Finish + real analysis
     await Future.delayed(const Duration(milliseconds: 1000));
     await _navigateToResult();
   }
@@ -132,6 +123,12 @@ class _ScanningPageState extends State<ScanningPage>
         continue;
       }
       if (safeBrowsingResult.status == CheckStatus.safe) {
+        if (mounted) {
+          setState(() {
+            _statusText = '검색 서버 확인 중...';
+            _progress = 0.95;
+          });
+        }
         item = await _requestSearchServer(item);
       } else {
         await HistoryRepository().updateItem(item);
@@ -178,49 +175,53 @@ class _ScanningPageState extends State<ScanningPage>
       'userId': user.uid,
       'originalUrl': item.url,
     };
-    debugPrint(
-      'SearchServer: Request GET $endpoint headers={Authorization: Bearer ****$tokenTail, Content-Type: application/json} body=${jsonEncode(payload)}',
-    );
     MessageCheckItem current = item;
-    final http.Client client = http.Client();
-    try {
-      while (true) {
-        final http.Request request = http.Request('GET', endpoint);
-        request.headers['Authorization'] = 'Bearer $idToken';
-        request.headers['Content-Type'] = 'application/json';
-        request.body = jsonEncode(payload);
-        final http.StreamedResponse streamedResponse = await client.send(
-          request,
-        );
-        final http.Response response =
-            await http.Response.fromStream(streamedResponse);
+    int attempt = 0;
+    while (true) {
+      attempt += 1;
       debugPrint(
-        'SearchServer: Response ${response.statusCode} ${response.body}',
+        'SearchServer: Request #$attempt POST $endpoint headers={Authorization: Bearer ****$tokenTail, Content-Type: application/json} body=${jsonEncode(payload)}',
       );
-      if (response.statusCode != 200) {
-        return current;
+      try {
+        final http.Response response = await http.post(
+          endpoint,
+          headers: {
+            'Authorization': 'Bearer $idToken',
+            'Content-Type': 'application/json',
+          },
+          body: jsonEncode(payload),
+        );
+        debugPrint(
+          'SearchServer: Response #$attempt ${response.statusCode} ${response.body}',
+        );
+        if (response.statusCode != 200) {
+          return current.copyWith(analysisStatus: 'FAIL');
+        }
+        final Map<String, dynamic> body =
+            jsonDecode(response.body) as Map<String, dynamic>;
+        final Map<String, dynamic>? data =
+            body['data'] as Map<String, dynamic>?;
+        final Map<String, dynamic> source = data ?? body;
+        final String? status = source['status'] as String?;
+        current = current.copyWith(
+          searchId: (source['result_id'] ?? source['id'])?.toString(),
+          analysisStatus: status,
+          riskScore: source['riskScore'] as int?,
+          finalUrl: source['finalUrl'] as String?,
+          messageText: source['messageText'] as String?,
+          screenshotPath: source['screenshotPath'] as String?,
+          llmSummary: source['llmSummary'] as String?,
+          detailsJson: source['details'] as String?,
+        );
+        await HistoryRepository().updateItem(current);
+        if (status != null && status != 'PENDING') {
+          return current;
+        }
+        await Future<void>.delayed(const Duration(seconds: 10));
+      } catch (e) {
+        debugPrint('SearchServer: Request failed $e');
+        return current.copyWith(analysisStatus: 'FAIL');
       }
-      final Map<String, dynamic> body =
-          jsonDecode(response.body) as Map<String, dynamic>;
-      final String? status = body['status'] as String?;
-      current = current.copyWith(
-        searchId: (body['result_id'] ?? body['id'])?.toString(),
-        analysisStatus: status,
-        riskScore: body['riskScore'] as int?,
-        finalUrl: body['finalUrl'] as String?,
-        messageText: body['messageText'] as String?,
-        screenshotPath: body['screenshotPath'] as String?,
-        llmSummary: body['llmSummary'] as String?,
-        detailsJson: body['details'] as String?,
-      );
-      await HistoryRepository().updateItem(current);
-      if (status != null && status != 'PENDING') {
-        return current;
-      }
-      await Future<void>.delayed(const Duration(seconds: 1));
-    }
-    } finally {
-      client.close();
     }
   }
 

@@ -1,16 +1,17 @@
-import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:seogodong/features/link_check/domain/check_status.dart';
 import 'package:seogodong/features/link_check/domain/message_check_item.dart';
 import 'package:seogodong/features/authentication/presentation/login_page.dart';
 import 'package:seogodong/features/link_check/presentation/message_detail_page.dart';
 import 'package:seogodong/features/link_check/presentation/history_page.dart';
+import 'package:seogodong/features/link_check/data/history_repository.dart';
 import 'package:seogodong/features/settings/presentation/settings_page.dart';
 import 'package:seogodong/features/link_check/presentation/widgets/message_card.dart';
 import 'package:seogodong/features/link_check/presentation/scanning_page.dart';
+import 'package:seogodong/app/route_observer.dart';
+import 'package:seogodong/features/link_check/data/pending_polling_service.dart';
 import 'package:firebase_auth/firebase_auth.dart' as firebase_auth;
 import 'package:receive_sharing_intent/receive_sharing_intent.dart';
 import 'dart:async';
@@ -22,7 +23,8 @@ class HomePage extends StatefulWidget {
   State<HomePage> createState() => _HomePageState();
 }
 
-class _HomePageState extends State<HomePage> {
+class _HomePageState extends State<HomePage>
+    with RouteAware, WidgetsBindingObserver {
   int _selectedIndex = 0;
   final List<MessageCheckItem> _recentItems = [];
   StreamSubscription<List<SharedMediaFile>>? _mediaStreamSubscription;
@@ -37,13 +39,38 @@ class _HomePageState extends State<HomePage> {
     super.initState();
     _loadRecentItems();
     _setupSharing();
+    PendingPollingService().start();
+    WidgetsBinding.instance.addObserver(this);
   }
 
   @override
   void dispose() {
     _mediaStreamSubscription?.cancel();
     _webInputController.dispose();
+    WidgetsBinding.instance.removeObserver(this);
+    routeObserver.unsubscribe(this);
     super.dispose();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final ModalRoute<dynamic>? route = ModalRoute.of(context);
+    if (route != null) {
+      routeObserver.subscribe(this, route);
+    }
+  }
+
+  @override
+  void didPopNext() {
+    _loadRecentItems();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _loadRecentItems();
+    }
   }
 
   Future<void> _setupSharing() async {
@@ -95,17 +122,8 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _loadRecentItems() async {
-    final SharedPreferences prefs = await SharedPreferences.getInstance();
-    final List<String> rawItems = prefs.getStringList('history') ?? [];
-
-    final List<MessageCheckItem> loaded = [];
-    for (final raw in rawItems) {
-      try {
-        final Map<String, dynamic> json =
-            jsonDecode(raw) as Map<String, dynamic>;
-        loaded.add(MessageCheckItem.fromJson(json));
-      } catch (_) {}
-    }
+    final List<MessageCheckItem> loaded =
+        await HistoryRepository().getAllItems();
 
     if (mounted) {
       setState(() {
@@ -169,7 +187,13 @@ class _HomePageState extends State<HomePage> {
   }
 
   Widget _buildDashboard(BuildContext context, CheckStatus status) {
-    final bool isSafe = status == CheckStatus.safe;
+    final bool hasUnreadAlert = _recentItems.any(
+      (item) =>
+          item.isSearchComplete &&
+          !item.isRead &&
+          item.status != CheckStatus.safe,
+    );
+    final bool isSafe = !hasUnreadAlert;
     final Color statusColor = isSafe
         ? Colors.green.shade700
         : Colors.red.shade700;
@@ -197,7 +221,7 @@ class _HomePageState extends State<HomePage> {
                   ),
                   const SizedBox(height: 16),
                   Text(
-                    isSafe ? '현재 안전한 상태입니다' : '위험이 감지되었습니다',
+                    isSafe ? '감지된 위험 링크가 없습니다.' : '위험한 링크를 감지했어요.',
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       fontSize: 22,
@@ -467,6 +491,7 @@ class _HomePageState extends State<HomePage> {
         ),
       );
     } else {
+      _markItemRead(item);
       // Go to detail
       Navigator.push(
         context,
@@ -480,5 +505,21 @@ class _HomePageState extends State<HomePage> {
         ),
       );
     }
+  }
+
+  Future<void> _markItemRead(MessageCheckItem item) async {
+    if (!item.isSearchComplete || item.isRead) {
+      return;
+    }
+    final int index = _recentItems.indexWhere((e) => e.id == item.id);
+    if (index == -1) {
+      return;
+    }
+    final MessageCheckItem updated = item.copyWith(isRead: true);
+    await HistoryRepository().updateItem(updated);
+    if (!mounted) return;
+    setState(() {
+      _recentItems[index] = updated;
+    });
   }
 }

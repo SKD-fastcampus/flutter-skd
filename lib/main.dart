@@ -4,6 +4,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:kakao_flutter_sdk_user/kakao_flutter_sdk_user.dart';
 import 'package:seogodong/core/config/constants.dart';
 import 'package:seogodong/app/root_page.dart';
+import 'package:seogodong/app/route_observer.dart';
 import 'package:seogodong/firebase_options.dart';
 
 Future<void> main() async {
@@ -47,6 +48,7 @@ class SeogodongApp extends StatelessWidget {
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.teal),
       ),
+      navigatorObservers: [routeObserver],
       home: const RootPage(),
     );
   }

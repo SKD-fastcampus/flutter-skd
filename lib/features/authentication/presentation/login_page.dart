@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart' as firebase_auth;
 import 'package:kakao_flutter_sdk_user/kakao_flutter_sdk_user.dart';
@@ -22,6 +23,8 @@ class _LoginPageState extends State<LoginPage> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            Image.asset('detective_crab.png', height: 96),
+            const SizedBox(height: 16),
             Text('게섯거라', style: Theme.of(context).textTheme.headlineMedium),
             const SizedBox(height: 84),
             InkWell(
@@ -82,9 +85,16 @@ class _LoginPageState extends State<LoginPage> {
   }
 
   Future<void> _handleKakaoLogin() async {
-    if (kakaoNativeAppKey.isEmpty) {
-      _showSnack('KAKAO_NATIVE_APP_KEY가 필요합니다.');
-      return;
+    if (kIsWeb) {
+      if (kakaoJavaScriptAppKey.isEmpty) {
+        _showSnack('KAKAO_JAVASCRIPT_APP_KEY가 필요합니다.');
+        return;
+      }
+    } else {
+      if (kakaoNativeAppKey.isEmpty) {
+        _showSnack('KAKAO_NATIVE_APP_KEY가 필요합니다.');
+        return;
+      }
     }
     setState(() {
       _isLoggingIn = true;
@@ -98,9 +108,10 @@ class _LoginPageState extends State<LoginPage> {
       if (idToken == null || idToken.isEmpty) {
         throw Exception('Kakao idToken이 없습니다.');
       }
-      final firebase_auth.OAuthProvider provider = firebase_auth.OAuthProvider(
-        'oidc.seogodong',
-      );
+      final String providerId =
+          kIsWeb ? 'oidc.seogodong.web' : 'oidc.seogodong';
+      final firebase_auth.OAuthProvider provider =
+          firebase_auth.OAuthProvider(providerId);
       final firebase_auth.OAuthCredential credential = provider.credential(
         idToken: idToken,
         accessToken: token.accessToken,

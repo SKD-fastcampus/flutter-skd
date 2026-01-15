@@ -269,7 +269,7 @@ class _MessageDetailPageState extends State<MessageDetailPage> {
               const Icon(Icons.auto_awesome, color: Colors.amber, size: 20),
               const SizedBox(width: 8),
               Text(
-                'AI 인공지능 분석 요약',
+                'AI 분석 결과',
                 style: TextStyle(
                   fontSize: 15,
                   fontWeight: FontWeight.w700,
@@ -308,7 +308,9 @@ class _MessageDetailPageState extends State<MessageDetailPage> {
                     ],
                   )
                 : Text(
-                    _analysisText.isEmpty ? '분석 내용이 아직 없습니다.' : _analysisText,
+                    _analysisText.isEmpty
+                        ? '분석 내용이 아직 없습니다. 로그아웃 상태라면, 로그인을 진행하여 AI 설명을 확인해 보세요.'
+                        : _analysisText,
                     style: const TextStyle(
                       fontSize: 16,
                       height: 1.6,
@@ -548,7 +550,7 @@ class _MessageDetailPageState extends State<MessageDetailPage> {
       }
       final String tokenTail =
           idToken.length >= 4 ? idToken.substring(idToken.length - 4) : idToken;
-      debugPrint('SSE: Firebase ID token(last4)=$idToken');
+      debugPrint('SSE: Firebase ID token(last4)=$tokenTail');
       setState(() {
         _isStreaming = true;
       });

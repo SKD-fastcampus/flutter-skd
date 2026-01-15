@@ -8,6 +8,7 @@ class MessageCheckItem {
     required this.fullText,
     required this.url,
     required this.status,
+    this.isRead = false,
     this.threatType,
     this.details,
     this.searchId,
@@ -25,6 +26,7 @@ class MessageCheckItem {
   final String fullText;
   final String url;
   final CheckStatus status;
+  final bool isRead;
   final String? threatType;
   final String? details;
   final String? searchId;
@@ -127,6 +129,7 @@ class MessageCheckItem {
 
   MessageCheckItem copyWith({
     CheckStatus? status,
+    bool? isRead,
     String? threatType,
     String? details,
     String? searchId,
@@ -144,6 +147,7 @@ class MessageCheckItem {
       fullText: fullText,
       url: url,
       status: status ?? this.status,
+      isRead: isRead ?? this.isRead,
       threatType: threatType ?? this.threatType,
       details: details ?? this.details,
       searchId: searchId ?? this.searchId,
@@ -164,6 +168,7 @@ class MessageCheckItem {
       'fullText': fullText,
       'url': url,
       'status': status.index,
+      'isRead': isRead,
       'threatType': threatType,
       'details': details,
       'searchId': searchId,
@@ -185,6 +190,7 @@ class MessageCheckItem {
           json['fullText'] as String? ?? (json['snippet'] as String? ?? ''),
       url: json['url'] as String? ?? '',
       status: CheckStatus.values[(json['status'] as int?) ?? 0],
+      isRead: json['isRead'] as bool? ?? false,
       threatType: json['threatType'] as String?,
       details: json['details'] as String?,
       searchId: json['searchId'] as String?,
