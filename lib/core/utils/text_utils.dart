@@ -33,5 +33,5 @@ String? _normalizeUrl(String raw) {
   if (trimmed.startsWith(RegExp(r'https?://', caseSensitive: false))) {
     return trimmed;
   }
-  return trimmed;
+  return 'https://$trimmed';
 }
