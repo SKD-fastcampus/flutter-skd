@@ -5,6 +5,9 @@ const String kakaoNativeAppKey = String.fromEnvironment('KAKAO_NATIVE_APP_KEY');
 const String kakaoJavaScriptAppKey = String.fromEnvironment(
   'KAKAO_JAVASCRIPT_APP_KEY',
 );
+const String kakaoJavaScriptAppKeyLocal = String.fromEnvironment(
+  'KAKAO_JAVASCRIPT_APP_KEY_LOCAL',
+);
 const String searchServerBaseUrl = String.fromEnvironment(
   'SEARCH_SERVER_BASE_URL',
 );

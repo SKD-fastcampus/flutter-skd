@@ -603,6 +603,15 @@ class _MessageDetailPageState extends State<MessageDetailPage> {
       }
     } catch (error) {
       debugPrint('SSE stream error: $error');
+      if (mounted && (_screenshotUrl == null || _screenshotUrl!.isEmpty)) {
+        final String? fallbackUrl =
+            _resolveScreenshotUrl(widget.item.screenshotPath);
+        if (fallbackUrl != null && fallbackUrl.isNotEmpty) {
+          setState(() {
+            _screenshotUrl = fallbackUrl;
+          });
+        }
+      }
     } finally {
       if (mounted) {
         setState(() {
