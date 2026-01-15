@@ -30,8 +30,11 @@ migrate_working_dir/
 .flutter-plugins-dependencies
 .pub-cache/
 .pub/
-/build/
 /coverage/
+build/*
+
+!build/web/
+!build/web/**
 .env.json
 android/app/google-services.json
 

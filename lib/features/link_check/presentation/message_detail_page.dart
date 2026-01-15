@@ -27,6 +27,7 @@ class _MessageDetailPageState extends State<MessageDetailPage> {
   String _analysisText = '';
   bool _isStreaming = false;
   bool _messageExpanded = false;
+  String? _screenshotUrl;
 
   @override
   void dispose() {
@@ -38,6 +39,7 @@ class _MessageDetailPageState extends State<MessageDetailPage> {
   void initState() {
     super.initState();
     _analysisText = widget.item.llmSummary ?? '';
+    _screenshotUrl = _resolveScreenshotUrl(widget.item.screenshotPath);
     if (_analysisText.isEmpty) {
       if (widget.item.isSearchComplete) {
         _startAnalysisStream();
@@ -430,41 +432,10 @@ class _MessageDetailPageState extends State<MessageDetailPage> {
   }
 
   Widget _buildScreenshotSection(MessageCheckItem item) {
-    final String? path = item.screenshotPath;
-    if (path == null || path.isEmpty) return const SizedBox.shrink();
-
-    // S3 path to HTTP URL conversion logic might be needed here,
-    // but assuming for now it's a URL or handled by the image component.
-    String displayUrl = path;
-    if (path.startsWith('s3://')) {
-      // Temporary placeholder if direct S3 access isn't configured in frontend
-      return Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              '분석 증거 (스크린샷)',
-              style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 12),
-            Container(
-              height: 200,
-              width: double.infinity,
-              decoration: BoxDecoration(
-                color: Colors.grey.shade200,
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: const Center(
-                child: Text(
-                  '스크린샷을 불러올 수 없습니다.\nS3 권한 확인이 필요합니다.',
-                  textAlign: TextAlign.center,
-                ),
-              ),
-            ),
-          ],
-        ),
-      );
+    final String? displayUrl =
+        _screenshotUrl ?? _resolveScreenshotUrl(item.screenshotPath);
+    if (displayUrl == null || displayUrl.isEmpty) {
+      return const SizedBox.shrink();
     }
 
     return Padding(
@@ -589,6 +560,31 @@ class _MessageDetailPageState extends State<MessageDetailPage> {
           continue;
         }
         final String data = line.substring(5).trim();
+        if (currentEvent == 'meta') {
+          final Map<String, dynamic> payload =
+              jsonDecode(data) as Map<String, dynamic>;
+          final dynamic screenshot = payload['screenshot'];
+          String? nextUrl;
+          if (screenshot is String) {
+            nextUrl = _resolveScreenshotUrl(screenshot);
+          } else if (screenshot is Map<String, dynamic>) {
+            final String? bucket = screenshot['bucket'] as String?;
+            final String? key = screenshot['key'] as String?;
+            final String? region = screenshot['region'] as String?;
+            if (bucket != null && key != null && region != null) {
+              final String encodedKey =
+                  Uri.encodeFull(key).replaceAll('+', '%2B');
+              nextUrl =
+                  'https://$bucket.s3.$region.amazonaws.com/$encodedKey';
+            }
+          }
+          if (nextUrl != null && mounted) {
+            setState(() {
+              _screenshotUrl = nextUrl;
+            });
+          }
+          continue;
+        }
         if (currentEvent == 'delta') {
           final Map<String, dynamic> payload =
               jsonDecode(data) as Map<String, dynamic>;
@@ -615,6 +611,25 @@ class _MessageDetailPageState extends State<MessageDetailPage> {
       }
     }
     return;
+  }
+
+  String? _resolveScreenshotUrl(String? path) {
+    if (path == null || path.isEmpty) {
+      return null;
+    }
+    if (!path.startsWith('s3://')) {
+      return path;
+    }
+    final String withoutScheme = path.substring(5);
+    final int slashIndex = withoutScheme.indexOf('/');
+    if (slashIndex == -1) {
+      return null;
+    }
+    final String bucket = withoutScheme.substring(0, slashIndex);
+    final String key = withoutScheme.substring(slashIndex + 1);
+    final String encodedKey = Uri.encodeFull(key).replaceAll('+', '%2B');
+    const String region = 'ap-northeast-2';
+    return 'https://$bucket.s3.$region.amazonaws.com/$encodedKey';
   }
 
 }
