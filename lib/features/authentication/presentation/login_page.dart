@@ -100,29 +100,27 @@ class _LoginPageState extends State<LoginPage> {
       _isLoggingIn = true;
     });
     try {
-      final bool installed = await isKakaoTalkInstalled();
-      final OAuthToken token = installed
-          ? await UserApi.instance.loginWithKakaoTalk()
-          : await UserApi.instance.loginWithKakaoAccount();
-      final String? idToken = token.idToken;
-      if (idToken == null || idToken.isEmpty) {
-        throw Exception('Kakao idToken이 없습니다.');
-      }
-      final String providerId =
-          kIsWeb ? 'oidc.seogodong.web' : 'oidc.seogodong';
-      final firebase_auth.OAuthProvider provider =
-          firebase_auth.OAuthProvider(providerId);
-      final firebase_auth.OAuthCredential credential = provider.credential(
-        idToken: idToken,
-        accessToken: token.accessToken,
-      );
-      await firebase_auth.FirebaseAuth.instance.signInWithCredential(
-        credential,
-      );
+      await _signInWithKakao(providerId: kIsWeb ? 'oidc.seogodong.web' : 'oidc.seogodong');
       await widget.onLoginSuccess();
       if (!mounted) return;
       _showSnack('카카오 로그인 성공!');
     } catch (error) {
+      if (kIsWeb &&
+          kakaoJavaScriptAppKeyLocal.isNotEmpty) {
+        try {
+          await _signInWithKakao(
+            providerId: 'oidc.seogodong.web.local',
+            javaScriptAppKeyOverride: kakaoJavaScriptAppKeyLocal,
+          );
+          await widget.onLoginSuccess();
+          if (!mounted) return;
+          _showSnack('카카오 로그인 성공!');
+          return;
+        } catch (fallbackError) {
+          _showSnack('카카오 로그인 실패: $fallbackError');
+          return;
+        }
+      }
       _showSnack('카카오 로그인 실패: $error');
     } finally {
       if (mounted) {
@@ -138,5 +136,31 @@ class _LoginPageState extends State<LoginPage> {
     ScaffoldMessenger.of(
       context,
     ).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Future<void> _signInWithKakao({
+    required String providerId,
+    String? javaScriptAppKeyOverride,
+  }) async {
+    if (kIsWeb && javaScriptAppKeyOverride != null) {
+      KakaoSdk.init(javaScriptAppKey: javaScriptAppKeyOverride);
+    }
+    final bool installed = await isKakaoTalkInstalled();
+    final OAuthToken token = installed
+        ? await UserApi.instance.loginWithKakaoTalk()
+        : await UserApi.instance.loginWithKakaoAccount();
+    final String? idToken = token.idToken;
+    if (idToken == null || idToken.isEmpty) {
+      throw Exception('Kakao idToken이 없습니다.');
+    }
+    final firebase_auth.OAuthProvider provider =
+        firebase_auth.OAuthProvider(providerId);
+    final firebase_auth.OAuthCredential credential = provider.credential(
+      idToken: idToken,
+      accessToken: token.accessToken,
+    );
+    await firebase_auth.FirebaseAuth.instance.signInWithCredential(
+      credential,
+    );
   }
 }
