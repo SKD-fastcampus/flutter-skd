@@ -74,15 +74,25 @@ class MessageCheckItem {
     return analysisStatus != 'PENDING';
   }
 
+  bool get isAnalysisFailed {
+    return analysisStatus == 'FAIL';
+  }
+
   String get resultLabel {
     if (!isSearchComplete) {
       return '분석 중';
+    }
+    if (isAnalysisFailed) {
+      return '❗ 분석 오류';
     }
     return '$riskLabel $riskEmoji';
   }
 
   String get resultLabelWithScore {
     if (!isSearchComplete) {
+      return resultLabel;
+    }
+    if (isAnalysisFailed) {
       return resultLabel;
     }
     if (riskScore == null) {
@@ -94,6 +104,9 @@ class MessageCheckItem {
   Color get resultColor {
     if (!isSearchComplete) {
       return Colors.black;
+    }
+    if (isAnalysisFailed) {
+      return Colors.red;
     }
     return riskColor;
   }
@@ -112,6 +125,10 @@ class MessageCheckItem {
   }
 
   String get riskDescription {
+    if (isAnalysisFailed) {
+      return '분석 중 오류가 발생했습니다. '
+          '안전한 링크인지 검증되지 않았으니 주의하시고, 잠시 후 다시 시도해 주세요.';
+    }
     switch (status) {
       case CheckStatus.unsafe:
         return '이 링크는 위험 신호가 감지되었습니다. '

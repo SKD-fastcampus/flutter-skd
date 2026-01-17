@@ -37,6 +37,7 @@ build/*
 !build/web/**
 .env.json
 android/app/google-services.json
+android/key.properties
 
 # Symbolication related
 app.*.symbols
