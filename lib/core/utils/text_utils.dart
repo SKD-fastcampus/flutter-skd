@@ -26,7 +26,26 @@ String buildSnippet(String text) {
 }
 
 String? _normalizeUrl(String raw) {
-  final String trimmed = raw.replaceAll(RegExp(r'[)\],.!?]+$'), '');
+  String trimmed = raw.trim();
+  if (trimmed.isEmpty) {
+    return null;
+  }
+  while (trimmed.startsWith('"') ||
+      trimmed.startsWith("'") ||
+      trimmed.startsWith('(') ||
+      trimmed.startsWith('[')) {
+    trimmed = trimmed.substring(1);
+  }
+  while (trimmed.endsWith('"') ||
+      trimmed.endsWith("'") ||
+      trimmed.endsWith(')') ||
+      trimmed.endsWith(']') ||
+      trimmed.endsWith(',') ||
+      trimmed.endsWith('.') ||
+      trimmed.endsWith('!') ||
+      trimmed.endsWith('?')) {
+    trimmed = trimmed.substring(0, trimmed.length - 1);
+  }
   if (trimmed.isEmpty) {
     return null;
   }
