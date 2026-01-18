@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart' as firebase_auth;
 import 'package:kakao_flutter_sdk_user/kakao_flutter_sdk_user.dart';
 import 'package:seogodong/features/authentication/presentation/login_page.dart';
+import 'package:seogodong/app/root_page.dart';
 
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
@@ -17,8 +18,10 @@ class _SettingsPageState extends State<SettingsPage> {
     } catch (_) {}
     await firebase_auth.FirebaseAuth.instance.signOut();
     if (!mounted) return;
-    Navigator.of(context).popUntil((route) => route.isFirst);
-    // Ideally we should have a callback or stream listening to auth state changes to redirect
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const RootPage()),
+      (route) => false,
+    );
   }
 
   Future<void> _confirmLogout() async {

@@ -39,6 +39,9 @@ class MessageCheckItem {
   final String? detailsJson;
 
   String get riskLabel {
+    if (isAnalysisFailed) {
+      return '분석 오류';
+    }
     switch (status) {
       case CheckStatus.unsafe:
         return '위험';
@@ -112,6 +115,9 @@ class MessageCheckItem {
   }
 
   String get riskEmoji {
+    if (isAnalysisFailed) {
+      return '❗';
+    }
     switch (status) {
       case CheckStatus.safe:
         return '🙂';
