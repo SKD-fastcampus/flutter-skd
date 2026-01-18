@@ -33,13 +33,15 @@ String? _normalizeUrl(String raw) {
   while (trimmed.startsWith('"') ||
       trimmed.startsWith("'") ||
       trimmed.startsWith('(') ||
-      trimmed.startsWith('[')) {
+      trimmed.startsWith('[') ||
+      trimmed.startsWith('{')) {
     trimmed = trimmed.substring(1);
   }
   while (trimmed.endsWith('"') ||
       trimmed.endsWith("'") ||
       trimmed.endsWith(')') ||
       trimmed.endsWith(']') ||
+      trimmed.endsWith('}') ||
       trimmed.endsWith(',') ||
       trimmed.endsWith('.') ||
       trimmed.endsWith('!') ||
