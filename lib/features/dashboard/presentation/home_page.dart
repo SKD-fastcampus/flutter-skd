@@ -231,7 +231,7 @@ class _HomePageState extends State<HomePage>
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    '오늘 검사한 링크: ${_recentItems.length}건',
+                    '검사한 링크: ${_recentItems.length}건',
                     style: TextStyle(
                       color: statusColor.withValues(alpha: 0.8),
                       fontSize: 14,
@@ -444,7 +444,8 @@ class _HomePageState extends State<HomePage>
           '1. 문자나 카카오톡에서 의심되는 메시지를 꾹 누르세요.\n'
           '2. "공유" 버튼을 찾아서 누르세요.\n'
           '3. 앱 목록에서 "게섯거라"를 선택하세요.\n\n'
-          '또는 메시지를 복사한 후 앱에서 "복사한 문자 검사하기"를 누르세요.',
+          '또는 메시지를 복사한 후 앱에서 "복사한 문자 검사하기"를 누르세요.\n\n'
+          '웹에서는 링크가 포함된 메시지를 복사해 페이지 입력창에 붙여넣어 주시면 됩니다.',
         ),
         actions: [
           TextButton(
